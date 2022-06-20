@@ -6,7 +6,7 @@ public class ASTNode {
     
     public enum Errors: Error {
         case parsingError
-        case contentTypeCreationFailed
+        case contentTypeCreationFailed(String)
     }
     
     public weak var parent: ASTNode?
@@ -26,7 +26,7 @@ public class ASTNode {
         else { throw Errors.parsingError }
 
         guard let contentType = ContentType(rawValue: prefix)
-        else { throw Errors.contentTypeCreationFailed }
+        else { throw Errors.contentTypeCreationFailed(prefix) }
         self.contentType = contentType
         
         switch self.contentType {
