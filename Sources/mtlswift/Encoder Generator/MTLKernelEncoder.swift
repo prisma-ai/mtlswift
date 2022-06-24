@@ -37,16 +37,12 @@ public struct MTLKernelEncoder {
         let sourceBuilder = SourceStringBuilder()
         sourceBuilder.begin()
 
-        sourceBuilder.add(line: "\(self.accessLevel.rawValue) class \(self.swiftName) {")
+        sourceBuilder.add(line: "final class \(self.swiftName) {")
         sourceBuilder.blankLine()
         sourceBuilder.pushLevel()
 
-        if let bc = self.branchingConstant {
-            sourceBuilder.add(line: "\(self.accessLevel.rawValue) let \(bc.name): \(bc.type.swiftTypeDelcaration)")
-        }
-
         sourceBuilder.blankLine()
-        sourceBuilder.add(line: "\(self.accessLevel.rawValue) let pipelineState: MTLComputePipelineState")
+        sourceBuilder.add(line: "let pipelineState: MTLComputePipelineState")
         sourceBuilder.blankLine()
 
         if self.usedConstants.isEmpty && self.branchingConstant == nil {
@@ -54,26 +50,40 @@ public struct MTLKernelEncoder {
             sourceBuilder.add(line: "\(self.accessLevel.rawValue) init(library: MTLLibrary) throws {")
             sourceBuilder.pushLevel()
 
-            sourceBuilder.add(line: "self.pipelineState = try library.computePipelineState(function: \"\(self.shaderName)\")")
+            sourceBuilder.add(line: "self.pipelineState = try library.makeComputePipelineState(function: \"\(self.shaderName)\")")
         } else {
             let parameterString = ", " + self.usedConstants.map { "\($0.name): \($0.type.swiftTypeDelcaration)" }.joined(separator: ", ")
             sourceBuilder.add(line: "\(self.accessLevel.rawValue) init(library: MTLLibrary\(self.usedConstants.isEmpty ? "" : parameterString)) throws {")
+
             sourceBuilder.pushLevel()
 
-            sourceBuilder.add(line: "let constantValues = MTLFunctionConstantValues()")
+            sourceBuilder.add(line: "self.pipelineState = try library.makeComputePipelineState(")
+
+            sourceBuilder.pushLevel()
+
+            sourceBuilder.add(line: "function: \"\(self.shaderName)\",")
+            sourceBuilder.add(line: "constants: .init()")
+
+            sourceBuilder.pushLevel()
+
             if let bc = self.branchingConstant {
-                sourceBuilder.add(line: "self.\(bc.name) = library.device.supports(feature: .nonUniformThreadgroups)")
-                sourceBuilder.add(line: "constantValues.set(self.\(bc.name), at: \(bc.index))")
+                sourceBuilder.add(line: ".set(library.device.supportsNonuniformThreadgroups, at: \(bc.index))")
             }
 
             for constant in self.usedConstants {
                 switch constant.type {
-                case .ushort2: sourceBuilder.add(line: "constantValues.set(\(constant.name), type: .ushort2, at: \(constant.index))")
-                default: sourceBuilder.add(line: "constantValues.set(\(constant.name), at: \(constant.index))")
+                case .ushort2: break // sourceBuilder.add(line: "constantValues.set(\(constant.name), type: .ushort2, at: \(constant.index))")
+                default: sourceBuilder.add(line: ".set(\(constant.name), at: \(constant.index))")
                 }
             }
 
-            sourceBuilder.add(line: "self.pipelineState = try library.computePipelineState(function: \"\(self.shaderName)\", constants: constantValues)")
+
+
+            sourceBuilder.popLevel()
+
+            sourceBuilder.add(line: ")")
+
+            sourceBuilder.popLevel()
         }
 
         // MARK: Balancing for init
@@ -86,14 +96,13 @@ public struct MTLKernelEncoder {
         for (idx, ev) in self.encodingVariants.enumerated() {
             var threadgroupParameterString = ""
             var threadgroupVariableString = ""
-            let threadgroupExpressionString = ", threadgroupSize: _threadgroupSize"
 
             switch ev.threadgroupSize {
             case .provided:
                 threadgroupParameterString = "threadgroupSize: MTLSize, "
                 threadgroupVariableString = "let _threadgroupSize = threadgroupSize"
             case .max:
-                threadgroupVariableString = "let _threadgroupSize = self.pipelineState.max2dThreadgroupSize"
+                threadgroupVariableString = "let _threadgroupSize = self.pipelineState.maxThreadsPerThreadgroup2D"
             case .executionWidth:
                 threadgroupVariableString = "let _threadgroupSize = self.pipelineState.executionWidthThreadgroupSize"
             case .constant(_, _, _):
@@ -110,52 +119,38 @@ public struct MTLKernelEncoder {
             }
 
             if self.parameters.isEmpty {
-                sourceBuilder.add(line: "\(self.accessLevel.rawValue) func encode(\(gridSizeParameterString)\(threadgroupParameterString)using encoder: MTLComputeCommandEncoder) {")
+                sourceBuilder.add(line: "func callAsFunction(\(gridSizeParameterString)\(threadgroupParameterString)in commandBuffer: MTLCommandBuffer) {")
             } else {
                 var parameterString = ""
                 for parameter in self.parameters {
-                    parameterString += "\(parameter.name): \(parameter.swiftTypeName), "
+                    let customParamTypes: [String: String] = [
+                        "float2": "SIMD2<Float>",
+                        "float3": "SIMD3<Float>",
+                        "float4": "SIMD4<Float>",
+                    ]
+                    let swiftType = customParamTypes[parameter.swiftTypeName, default: parameter.swiftTypeName]
+                    parameterString += "\(parameter.name): \(swiftType), "
                 }
 
                 var parametersBodyString = ""
-                let gridSizeValueString = gridSizeParameterString.isEmpty ? "" : ", gridSize: gridSize"
-                let threadgroupSizeValueString = threadgroupParameterString.isEmpty ? "" : ", threadgroupSize: threadgroupSize"
+//                let gridSizeValueString = gridSizeParameterString.isEmpty ? "" : ", gridSize: gridSize"
+//                let threadgroupSizeValueString = threadgroupParameterString.isEmpty ? "" : ", threadgroupSize: threadgroupSize"
                 for parameterIndex in 0 ..< self.parameters.count {
                     let parameterName = self.parameters[parameterIndex].name
                     let parameterSeparator = parameterIndex < self.parameters.count - 1 ? ", " : ""
                     parametersBodyString += parameterName + ": " + parameterName + parameterSeparator
                 }
 
-                // Call as function in commandBuffer
-                sourceBuilder.add(line: "\(self.accessLevel.rawValue) func callAsFunction(\(parameterString)\(gridSizeParameterString)\(threadgroupParameterString)in commandBuffer: MTLCommandBuffer) {")
-                sourceBuilder.pushLevel()
-                sourceBuilder.add(line: "self.encode(\(parametersBodyString)\(gridSizeValueString)\(threadgroupSizeValueString), in: commandBuffer)")
-                sourceBuilder.popLevel()
-                sourceBuilder.add(line: "}")
-
-                // Call as function using encoder
-                sourceBuilder.add(line: "\(self.accessLevel.rawValue) func callAsFunction(\(parameterString)\(gridSizeParameterString)\(threadgroupParameterString)using encoder: MTLComputeCommandEncoder) {")
-                sourceBuilder.pushLevel()
-                sourceBuilder.add(line: "self.encode(\(parametersBodyString)\(gridSizeValueString)\(threadgroupSizeValueString), using: encoder)")
-                sourceBuilder.popLevel()
-                sourceBuilder.add(line: "}")
-
-                // Encode in commandBuffer
-                sourceBuilder.add(line: "\(self.accessLevel.rawValue) func encode(\(parameterString)\(gridSizeParameterString)\(threadgroupParameterString)in commandBuffer: MTLCommandBuffer) {")
-                sourceBuilder.pushLevel()
-                sourceBuilder.add(line: "commandBuffer.compute { encoder in")
-                sourceBuilder.pushLevel()
-                sourceBuilder.add(line: "encoder.label = \"\(self.swiftName)\"")
-                sourceBuilder.add(line: "self.encode(\(parametersBodyString)\(gridSizeValueString)\(threadgroupSizeValueString), using: encoder)")
-                sourceBuilder.popLevel()
-                sourceBuilder.add(line: "}")
-                sourceBuilder.popLevel()
-                sourceBuilder.add(line: "}")
-
                 // Ecode using encoder
-                sourceBuilder.add(line: "\(self.accessLevel.rawValue) func encode(\(parameterString)\(gridSizeParameterString)\(threadgroupParameterString)using encoder: MTLComputeCommandEncoder) {")
+                sourceBuilder.add(line: "func callAsFunction(\(parameterString)\(gridSizeParameterString)\(threadgroupParameterString) in commandBuffer: MTLCommandBuffer) {")
             }
+
+            sourceBuilder.add(line: "commandBuffer.compute { encoder in")
+
             sourceBuilder.pushLevel()
+
+            sourceBuilder.add(line: "encoder.label = \"\(self.swiftName)\"")
+
             sourceBuilder.add(line: threadgroupVariableString)
 
             for parameter in self.parameters {
@@ -186,58 +181,59 @@ public struct MTLKernelEncoder {
                 }
             }
 
-            sourceBuilder.blankLine()
+            sourceBuilder.add(line: "encoder.dispatch2D(")
+            sourceBuilder.pushLevel()
+            sourceBuilder.add(line: "state: self.pipelineState,")
 
             switch ev.dispatchType {
             case .none:
-                sourceBuilder.add(line: "encoder.setComputePipelineState(self.pipelineState)")
-
+                break
             // MARK: Even dispatching
             case .even(parameters: .provided):
-                sourceBuilder.add(line: "encoder.dispatch2d(state: self.pipelineState, covering: gridSize\(threadgroupExpressionString))")
-
+                sourceBuilder.add(line: "cover: gridSize,")
             case .even(parameters: .constant(_, _, _)):
-                sourceBuilder.add(line: "encoder.dispatch2d(state: self.pipelineState, covering: \(self.swiftName).gridSize\(idx)\(threadgroupExpressionString))")
-
+                sourceBuilder.add(line: "cover: \(self.swiftName).gridSize\(idx),")
             case .even(parameters: .over(let argument)):
                 if let targetParameter = self.parameters.first(where: { $0.name == argument }),
                    targetParameter.kind == .texture {
-                    sourceBuilder.add(line: "encoder.dispatch2d(state: self.pipelineState, covering: \(targetParameter.name).size\(threadgroupExpressionString))")
+                    sourceBuilder.add(line: "cover: \(targetParameter.name).size,")
                 } else {
                     fatalError("Could not generate dispatching over parameter \(argument)")
                 }
 
             // MARK: Exact dispatching
             case .exact(parameters: .provided):
-                sourceBuilder.add(line: "encoder.dispatch2d(state: self.pipelineState, exactly: gridSize\(threadgroupExpressionString))")
-
+                sourceBuilder.add(line: "exact: gridSize,")
             case .exact(parameters: .constant(_, _, _)):
-                sourceBuilder.add(line: "encoder.dispatch2d(state: self.pipelineState, exactly: \(self.swiftName).gridSize\(idx)\(threadgroupExpressionString))")
-
+                sourceBuilder.add(line: "exact: \(self.swiftName).gridSize\(idx),")
             case .exact(parameters: .over(let argument)):
                 if let targetParameter = self.parameters.first(where: { $0.name == argument }),
                     targetParameter.kind == .texture {
-                    sourceBuilder.add(line: "encoder.dispatch2d(state: self.pipelineState, exactly: \(targetParameter.name).size\(threadgroupExpressionString))")
+                    sourceBuilder.add(line: "exact: \(targetParameter.name).size,")
                 } else {
                     print("Could not generate dispatching over parameter \(argument)")
                 }
 
             // MARK: Optimal dispatching
             case .optimal(_, parameters: .provided):
-                let bc = self.branchingConstant!
-                sourceBuilder.add(line: "if self.\(bc.name) { encoder.dispatch2d(state: self.pipelineState, exactly: gridSize\(threadgroupExpressionString)) } else { encoder.dispatch2d(state: self.pipelineState, covering: gridSize\(threadgroupExpressionString)) }")
+                sourceBuilder.add(line: "optimal: gridSize,")
             case .optimal(_, parameters: .constant(_, _, _)):
-                let bc = self.branchingConstant!
-                sourceBuilder.add(line: "if self.\(bc.name) { encoder.dispatch2d(state: self.pipelineState, exactly: \(self.swiftName).gridSize\(idx)\(threadgroupExpressionString)) } else { encoder.dispatch2d(state: self.pipelineState, covering: \(self.swiftName).gridSize\(idx)\(threadgroupExpressionString)) }")
+                sourceBuilder.add(line: "optimal: \(self.swiftName).gridSize\(idx),")
             case .optimal(_, parameters: .over(let argument)):
                 if let targetParameter = self.parameters.first(where: { $0.name == argument }),
                    targetParameter.kind == .texture {
-                    let bc = self.branchingConstant!
-                    sourceBuilder.add(line: "if self.\(bc.name) { encoder.dispatch2d(state: self.pipelineState, exactly: \(targetParameter.name).size\(threadgroupExpressionString)) } else { encoder.dispatch2d(state: self.pipelineState, covering: \(targetParameter.name).size\(threadgroupExpressionString)) }")
+                    sourceBuilder.add(line: "optimal: \(targetParameter.name).size,")
                 } else { print("Could not generate dispatching over parameter \(argument)") }
             }
 
+            sourceBuilder.add(line: "threadgroupSize: _threadgroupSize")
+
             sourceBuilder.popLevel()
+
+            sourceBuilder.add(line: ")")
+
+            sourceBuilder.popLevel()
+            sourceBuilder.add(line: "}")
             sourceBuilder.add(line: "}")
         }
 

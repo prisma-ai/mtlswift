@@ -19,14 +19,14 @@ public class ASTNode {
     public var stringValue: String? = nil
     public var integerValue: Int? = nil
     
-    public init(parsingString inputString: String) throws {
+    public init?(parsingString inputString: String) throws {
         let scanner = StringScanner(string: inputString)
         
         guard let prefix = scanner.readWord()
         else { throw Errors.parsingError }
 
         guard let contentType = ContentType(rawValue: prefix)
-        else { throw Errors.contentTypeCreationFailed(prefix) }
+        else { return nil }
         self.contentType = contentType
         
         switch self.contentType {
