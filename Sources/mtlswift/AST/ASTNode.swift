@@ -185,6 +185,34 @@ public class ASTNode {
         }
     }
     
+    public func extractImports() -> [String] {
+        func importDeclaration(from node: ASTNode) -> [String] {
+            guard let fullComment = node.children(of: .fullComment).first else { return [] }
+            
+            var modules: [String] = []
+            for paragraph in fullComment.children(of: .paragraphComment) {
+                textLoop: for text in paragraph.children(of: .textComment) {
+                    guard let rawString = text.stringValue else {
+                        continue textLoop
+                    }
+                    
+                    let scanner = StringScanner(string: rawString)
+                    scanner.skipWhiteSpaces()
+                        
+                    guard scanner.skip(exact: CustomDeclaration.declarationPrefix),
+                          let declaration = CustomDeclaration(rawString: scanner.leftString),
+                          case let .importModule(module) = declaration else {
+                        continue textLoop
+                    }
+                    
+                    modules.append(module)
+                }
+            }
+            return modules
+        }
+        return self.children.flatMap({ importDeclaration(from: $0) })
+    }
+    
     private func tryExtractShader(constants: [ASTFunctionConstant]) -> ASTShader? {
         guard self.contentType == .functionDecl
            && self.hasChildren(of: [.metalKernelAttr,
