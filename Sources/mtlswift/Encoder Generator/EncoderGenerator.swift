@@ -92,10 +92,13 @@ final class EncoderGenerator {
             }
 
             let constants = topNode.extractMetalFunctionConstants()
+            let imports = topNode.extractImports()
             let shaders = topNode.extractMetalShaders(constants: constants)
 
             if !headerIsAdded {
-                builder.add(line: "import Forge")
+                for module in imports {
+                    builder.add(line: "import \(module)")
+                }
                 builder.blankLine()
                 headerIsAdded = true
             }

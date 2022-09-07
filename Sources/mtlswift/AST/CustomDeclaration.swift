@@ -153,6 +153,14 @@ public enum CustomDeclaration {
                     return
                 }
             }
+        } else if scanner.skip(exact: CustomDeclaration.importDeclaration) {
+            guard let name = scanner.readWord() else {
+                print("ERROR: Failed to parse \(CustomDeclaration.importDeclaration), skipping: \(scanner.leftString)")
+                return nil
+            }
+            
+            self = .importModule(module: name)
+            return
         }
 
         print("Illegal string passed: \(rawString)")
@@ -192,6 +200,9 @@ public enum CustomDeclaration {
     
     public static let swiftParameterNameDeclaration = "swiftParameterName:"
     case swiftParameterName(oldName: String, newName: String)
+    
+    public static let importDeclaration = "import:"
+    case importModule(module: String)
     
     public static let swiftParameterTypeDeclaration = "swiftParameterType:"
     case swiftParameterType(parameter: String, type: String)
