@@ -19,6 +19,7 @@ public struct ASTShader {
         public var name: String
         public var kind: Kind
         public var index: Int?
+        public var arraySize: Int?
         
         public var description: String {
             return "parameter \(name): \(kind)(\(index ?? -1))"
@@ -87,8 +88,13 @@ public struct ASTShader {
             case .texture:
                 let name = swiftNameLookup[p.name, default: p.name]
                 var type = swiftTypeLookup[p.name] ?? "MTLTexture"
+                if p.arraySize != nil {
+                    type = "[MTLTexture]"
+                }
+                
+                let validTypes: Set<String> = ["MTLTexture", "MTLTexture?", "[MTLTexture]"]
 
-                if type != "MTLTexture" && type != "MTLTexture?" {
+                if !validTypes.contains(type) {
                     print("WARNING: Swift Types are not available for texture parameters, ignoring \(type)")
                     type = "MTLTexture"
                 }
@@ -97,6 +103,7 @@ public struct ASTShader {
                                                   swiftTypeName: type,
                                                   kind: .texture,
                                                   index: p.index ?? -1,
+                                                  size: p.arraySize,
                                                   defaultValueString: nil)
             case .buffer:
                 let name = swiftNameLookup[p.name, default: p.name]
