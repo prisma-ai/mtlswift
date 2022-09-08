@@ -90,6 +90,15 @@ public class ASTNode {
             scanner.skipWhiteSpaces()
             
             self.stringValue = scanner.readWord()
+            
+            scanner.skipWhiteSpaces()
+            
+            guard let typeDeclaration = scanner.readSingleQuotedTextIfAny() else {
+                Swift.print("Parsing error in \(inputString)")
+                break
+            }
+            
+            self.model = TypeDeclModel(typeDeclaration: typeDeclaration)
         case .integerLiteral:
             scanner.skipWhiteSpaces()
             scanner.skipHexIfAny()
@@ -254,7 +263,12 @@ public class ASTNode {
                                        .metalLocalIndexAttr])
                         .first?.children.first!.integerValue!
 
-            return ASTShader.Parameter(name: pn.stringValue ?? "_", kind: kind, index: idx)
+            return ASTShader.Parameter(
+                name: pn.stringValue ?? "_",
+                kind: kind,
+                index: idx,
+                arraySize: (pn.model as? TypeDeclModel)?.arraySize
+            )
         }
 
         let kind: ASTShader.Kind

@@ -9,6 +9,7 @@ public struct MTLKernelEncoder {
 
         public var kind: Kind
         public var index: Int
+        public var size: Int?
 
         public var defaultValueString: String? = nil
     }
@@ -162,7 +163,12 @@ public struct MTLKernelEncoder {
                         sourceBuilder.add(line: "encoder.setValue(\(parameter.name), at: \(parameter.index))")
                     }
                 case .texture:
-                    sourceBuilder.add(line: "encoder.setTexture(\(parameter.name), index: \(parameter.index))")
+                    if let size = parameter.size {
+                        sourceBuilder.add(line: "assert(\(parameter.name).count == \(size))")
+                        sourceBuilder.add(line: "encoder.setTextures(\(parameter.name), startingAt: \(parameter.index))")
+                    } else {
+                        sourceBuilder.add(line: "encoder.setTexture(\(parameter.name), index: \(parameter.index))")
+                    }
                 case .sampler:
                     sourceBuilder.add(line: "encoder.setSamplerState(\(parameter.name), index: \(parameter.index))")
                 case .threadgroupMemory:
