@@ -5,7 +5,7 @@ build:
 	swift build -c release --disable-sandbox
 
 install: build
-	install ".build/release/mtlswift" "$(bindir)"
+	sudo install ".build/release/mtlswift" "$(bindir)"
 
 uninstall:
 	rm -rf "$(bindir)/mtlswift"

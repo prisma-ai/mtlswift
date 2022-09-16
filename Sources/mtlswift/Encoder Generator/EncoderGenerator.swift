@@ -24,6 +24,7 @@ final class EncoderGenerator {
             let process = Process()
             process.launchPath = which("xcrun")!
             process.arguments = ["-sdk", "iphoneos", "metal",
+                                 "-Wextra", "-std=ios-metal2.4",
                                  "-Xclang", "-ast-dump",
                                  "-E",
                                  "-Xclang", "-fno-color-diagnostics",
