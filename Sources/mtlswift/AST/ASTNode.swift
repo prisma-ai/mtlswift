@@ -23,7 +23,7 @@ public class ASTNode {
         let scanner = StringScanner(string: inputString)
         
         guard let prefix = scanner.readWord()
-        else { throw Errors.parsingError }
+        else { return nil }
 
         guard let contentType = ContentType(rawValue: prefix)
         else { return nil }
