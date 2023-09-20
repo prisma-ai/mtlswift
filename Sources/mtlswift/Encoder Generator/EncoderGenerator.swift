@@ -27,7 +27,6 @@ final class EncoderGenerator {
                                  "-Wextra", "-std=ios-metal2.4",
                                  "-Xclang", "-ast-dump",
                                  "-E",
-                                 "-Xclang", "-fno-color-diagnostics",
                                  "-fno-color-diagnostics",
                                  metalFileURL.path]
             process.standardOutput = outputHandle
